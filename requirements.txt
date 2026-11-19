@@ -1,4 +1,4 @@
-streamlit
+streamlit>=1.38.0
 yfinance
 pandas
 numpy
@@ -6,4 +6,4 @@ plotly
 matplotlib
 reportlab
 duckdb
-# openbb  ← décommenter si déployé en local ou serveur dédié (trop lourd pour Streamlit Cloud gratuit)
+requests
