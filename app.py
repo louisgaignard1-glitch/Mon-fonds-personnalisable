@@ -825,9 +825,11 @@ if bench_failed:
     alerts.warning("⚠️ Composantes du benchmark indisponibles et exclues : "
                    f"{', '.join(bench_failed)}. Les autres poids sont réajustés au prorata.")
 issues = [t for t in kept if report[t]["status"] in ("stale", "partial")]
-if issues:
-    alerts.info("ℹ️ Lignes à surveiller : " + " ; ".join(
-        f"{ticker_names.get(t, t)} ({report[t]['note']})" for t in issues))
+issues_msg = (
+    "ℹ️ Lignes à surveiller : "
+    + " ; ".join(f"{ticker_names.get(t, t)} ({report[t]['note']})" for t in issues)
+    if issues else None
+)
 
 # =====================
 # Overlay tactique + NAV portefeuille
