@@ -30,7 +30,7 @@ st.markdown("""
 <style>
 :root{--navy:#0D2B55;--steel:#2E6DA4;--mist:#8FA3B8;--bg:#F8FAFC;--line:#D6DEE8;--muted:#5B6B7F;}
 .stApp{background:var(--bg);}
-.block-container{padding-top:1.4rem;max-width:1500px;}
+.block-container{padding-top:3.4rem;max-width:1500px;}
 #MainMenu, footer{visibility:hidden;}
 
 /* Titres */
