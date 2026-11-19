@@ -459,8 +459,8 @@ def get_store(path):
 # =====================================================================
 h_left, h_right = st.columns([5, 2], vertical_alignment="center")
 h_left.markdown(
-    '<div class="app-title"><h1>Portfolio vs Benchmark</h1>'
-    '<p>Allocation multi-actifs · Overlay tactique · Couverture USD/EUR · Factsheet PDF</p></div>',
+    '<div class="app-header"><h1>Portfolio vs Benchmark</h1>'
+    '<p>Gestion multi-actifs · Overlay tactique · Couverture USD/EUR · Reporting PDF</p></div>',
     unsafe_allow_html=True)
 export_slot = h_right.container()
 
