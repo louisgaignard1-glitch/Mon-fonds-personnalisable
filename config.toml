@@ -1,0 +1,19 @@
+# .streamlit/config.toml  (Streamlit >= 1.46 pour baseRadius / borderColor ; ignorés sinon)
+[theme]
+base = "light"
+primaryColor = "#2E6DA4"             # Bleu Acier : sliders, boutons primaires, focus
+backgroundColor = "#F8FAFC"          # fond de page
+secondaryBackgroundColor = "#EAF0F6" # sidebar, champs de saisie
+textColor = "#1B2A41"
+font = "sans serif"
+baseRadius = "0.5rem"
+borderColor = "#D6DEE8"
+
+[client]
+toolbarMode = "minimal"              # masque le menu développeur pour la démo recruteur
+
+[browser]
+gatherUsageStats = false
+
+[server]
+headless = true
