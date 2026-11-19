@@ -17,8 +17,78 @@ from factsheet_export import line_meta as _line_meta_hard
 from portfolio_builder import (add_asset_ui, init_alloc_state, render_alloc_editor,
                                sync_alloc)
 
-st.set_page_config(page_title="Portfolio vs Benchmark", layout="wide")
-st.title("📊 Portfolio vs Benchmark composite")
+st.set_page_config(page_title="Portfolio vs Benchmark", page_icon="📊", layout="wide")
+
+# =====================================================================
+# CHARTE GRAPHIQUE (palette de la factsheet PDF)
+# =====================================================================
+NAVY, STEEL, MIST = "#0D2B55", "#2E6DA4", "#8FA3B8"
+NEG = "#B23A48"
+SEQ = [NAVY, STEEL, MIST, "#5B7FA6", "#1B4F8A"]
+
+st.markdown("""
+<style>
+:root{--navy:#0D2B55;--steel:#2E6DA4;--mist:#8FA3B8;--bg:#F8FAFC;--line:#D6DEE8;--muted:#5B6B7F;}
+.stApp{background:var(--bg);}
+.block-container{padding-top:1.4rem;max-width:1500px;}
+#MainMenu, footer{visibility:hidden;}
+
+/* Titres */
+h1,h2,h3,h4,h5{color:var(--navy);letter-spacing:-.01em;}
+h3{border-bottom:1px solid var(--line);padding-bottom:.35rem;margin-top:1.2rem;}
+h5{text-transform:uppercase;font-size:.78rem;letter-spacing:.06em;color:var(--steel);margin:.2rem 0 .6rem;}
+
+/* En-tête */
+.app-title h1{font-size:1.9rem;font-weight:700;margin:0;padding:0;line-height:1.15;}
+.app-title p{margin:.25rem 0 0;color:var(--muted);font-size:.92rem;}
+.app-title{border-left:5px solid var(--navy);padding-left:.9rem;}
+
+/* Cartes métriques */
+[data-testid="stMetric"]{background:#fff;border:1px solid var(--line);border-left:4px solid var(--steel);
+  border-radius:8px;padding:.85rem 1rem;box-shadow:0 1px 3px rgba(13,43,85,.08);}
+[data-testid="stMetricLabel"] p{color:var(--muted);font-size:.74rem;text-transform:uppercase;
+  letter-spacing:.05em;font-weight:600;}
+[data-testid="stMetricValue"]{color:var(--navy);font-weight:700;}
+
+/* Onglets */
+.stTabs [data-baseweb="tab-list"]{gap:.2rem;border-bottom:1px solid var(--line);}
+.stTabs [data-baseweb="tab"]{height:2.9rem;padding:0 1.2rem;font-weight:600;color:var(--muted);}
+.stTabs [aria-selected="true"]{color:var(--navy);}
+.stTabs [data-baseweb="tab-highlight"]{background:var(--navy);height:3px;}
+.stTabs [data-baseweb="tab-border"]{background:transparent;}
+
+/* Sidebar */
+[data-testid="stSidebar"]{background:#fff;border-right:1px solid var(--line);}
+[data-testid="stSidebar"] h2,[data-testid="stSidebar"] h3{border:none;font-size:1rem;}
+
+/* Boutons */
+.stButton>button,.stDownloadButton>button{border-radius:6px;border:1px solid var(--steel);
+  color:var(--steel);font-weight:600;background:#fff;}
+.stButton>button:hover,.stDownloadButton>button:hover{background:var(--navy);color:#fff;border-color:var(--navy);}
+.stButton>button[kind="primary"]{background:var(--navy);color:#fff;border-color:var(--navy);}
+
+/* Cartes / conteneurs bordés, tableaux */
+[data-testid="stVerticalBlockBorderWrapper"]{background:#fff;border-radius:10px;}
+[data-testid="stDataFrame"]{border:1px solid var(--line);border-radius:8px;box-shadow:0 1px 3px rgba(13,43,85,.06);}
+
+/* Jauge d'allocation (Portfolio Builder) */
+.alloc-gauge{display:flex;height:14px;border-radius:7px;overflow:hidden;background:#E3E9F0;margin:.1rem 0 .9rem;}
+.alloc-gauge div:last-child{background:#C9D4E0;}
+</style>
+""", unsafe_allow_html=True)
+
+
+def style_fig(fig, height=420, **kw):
+    """Habillage Plotly commun : fond transparent, grille discrète, légende sous le graphique."""
+    fig.update_layout(template="plotly_white", height=height, paper_bgcolor="rgba(0,0,0,0)",
+                      plot_bgcolor="rgba(0,0,0,0)",
+                      font=dict(family="Inter, Segoe UI, sans-serif", color=NAVY, size=12),
+                      margin=dict(l=10, r=10, t=55, b=10),
+                      legend=dict(orientation="h", yanchor="top", y=-0.12, x=0), **kw)
+    fig.update_xaxes(gridcolor="#E6ECF2", zeroline=False)
+    fig.update_yaxes(gridcolor="#E6ECF2", zeroline=False)
+    return fig
+
 
 # =====================
 # Paramètres
@@ -61,18 +131,14 @@ TICKER_NAMES_HARD = {
 
 USD_DEFAULT = ["GOOGL", "META", "HWM", "AMZN"]   # repli si la devise est inconnue
 
-# Tickers de secours essayés dans l'ordre si le ticker principal ne renvoie rien
-# (autre cotation, ISIN, ETF proxy), par exemple : "0P0000A6ZG.F": ["FR0010541557.PA"]
 FALLBACK_TICKERS = {
     "TTE.PA": ["FP.PA"],
 }
 
-# Cotations de secours des proxys d'overlay (définies dans factsheet_export.OVERLAY_PROXIES)
 for _t, _m in OVERLAY_PROXIES.items():
     if _m["fallbacks"]:
         FALLBACK_TICKERS.setdefault(_t, list(_m["fallbacks"]))
 
-# Overlay tactique : valeurs neutres des curseurs (points de % d'actif net ; couverture en %)
 OV_DEFAULTS = dict(ov_eu=0.0, ov_us=0.0, ov_bond=0.0, ov_re=0.0, ov_split=50, ov_hedge=100,
                    ov_fund="prorata")
 FUNDING_OPTIONS = {"Au prorata des lignes non touchées": "prorata", "Via les liquidités": "cash"}
@@ -81,11 +147,9 @@ MIN_OBS = 30          # nombre minimal de cours pour qu'une ligne soit utilisabl
 STALE_DAYS = 10       # au-delà, un cours est jugé figé
 LATE_START_DAYS = 30  # historique démarrant bien après la date de début
 
-# Cache DuckDB : fichier local (":memory:" pour un cache non persistant)
 PRICE_DB_PATH = os.environ.get("PRICE_DB_PATH", "price_cache.duckdb")
 PRICE_TTL_HOURS = float(os.environ.get("PRICE_TTL_HOURS", "6"))
 
-# Rebalancement
 REBAL_OPTIONS = {"Quotidien (théorique)": "D", "Mensuel": "M", "Trimestriel": "Q"}
 
 
@@ -110,18 +174,7 @@ def rebalance_flags(index, freq):
 
 
 def simulate_portfolio(returns, target_w, freq="M", cost_bps=0.0):
-    """
-    Simule la valeur du portefeuille avec dérive des poids entre deux rebalancements.
-
-    - returns  : DataFrame de rendements journaliers par actif (index sans trou, NaN = 0)
-    - target_w : poids cibles (Series) ; le solde 1 - somme(poids) est conservé en liquidités (0 %)
-    - freq     : "D" (quotidien, théorique), "M" (mensuel), "Q" (trimestriel)
-    - cost_bps : frais en points de base appliqués au montant échangé sur chaque ligne
-                 (achats et ventes comptés séparément) ; les flux de trésorerie ne sont pas facturés.
-                 Le premier investissement n'est pas facturé (indice lancé en base 1).
-    Retourne un dict : nav (base 1), weights_end (poids dérivés des lignes à la dernière date),
-    n_rebal, turnover_ann (montants échangés / VL, annualisés), cost_total (frais cumulés, en base 1).
-    """
+    """Simule la valeur du portefeuille avec dérive des poids entre deux rebalancements."""
     cols = list(returns.columns)
     w = target_w.reindex(cols).fillna(0.0).to_numpy(dtype=float)
     w_full = np.append(w, max(0.0, 1.0 - w.sum()))          # dernière colonne = cash
@@ -169,21 +222,7 @@ def proxy_shares(eu_ticker, us_ticker, us_share):
 
 
 def build_tactical_weights(base_w, tilts, groups, proxy_alloc, funding="prorata"):
-    """
-    Applique les écarts tactiques aux poids de base (sans levier, sans poids négatif).
-
-    - base_w      : Series des poids de base (hors liquidités)
-    - tilts       : dict eq_eu, eq_us, bond, re en fraction de l'actif net (0.05 = +5 pts)
-    - groups      : dict eq_eu / eq_us / re -> lignes existantes de chaque poche
-    - proxy_alloc : dict bond / re -> {ticker proxy: part} (parts sommant à 1 ; {} si indisponible)
-    - funding     : "prorata" (financé / alimenté par les lignes non touchées) ou "cash"
-
-    Surpondération actions : lignes existantes de la zone, au prorata de leur poids.
-    Sous-pondération : plafonnée au poids actuel de la poche. Obligations d'État : proxys seulement
-    (écart >= 0). Immobilier : écart < 0 réduit le fonds existant, écart > 0 achète les proxys.
-    Si le financement est insuffisant, les achats sont réduits (pas de levier).
-    Retourne dict(weights, cash, eff, scaled) ; eff = écarts effectivement appliqués par poche.
-    """
+    """Applique les écarts tactiques aux poids de base (sans levier, sans poids négatif)."""
     proxies = sorted({t for a in proxy_alloc.values() for t in a})
     idx = list(base_w.index) + [t for t in proxies if t not in base_w.index]
     w = base_w.reindex(idx).fillna(0.0).astype(float)
@@ -206,7 +245,7 @@ def build_tactical_weights(base_w, tilts, groups, proxy_alloc, funding="prorata"
                 sleeve_lines[k].append(t)
 
     touched = {t for k, v in sleeve_lines.items() if float(tilts.get(k, 0.0)) != 0 for t in v}
-    free = [t for t in base_w.index if d[t] == 0 and w[t] > 0 and t not in touched]  # lignes non touchées
+    free = [t for t in base_w.index if d[t] == 0 and w[t] > 0 and t not in touched]
     pos, neg = float(d[d > 0].sum()), float(d[d < 0].sum())
     capacity = float(w[free].sum()) if funding == "prorata" else max(0.0, 1.0 - float(w.sum()))
     k_scale = 1.0
@@ -226,11 +265,7 @@ def build_tactical_weights(base_w, tilts, groups, proxy_alloc, funding="prorata"
 
 
 def strategy_returns(ret_eur, fx_ret, usd_cols, hedge):
-    """
-    Rendements EUR après couverture de change du ratio `hedge` (0 à 1) sur les colonnes USD.
-    fx_ret : rendement de EUR/USD (USD pour 1 EUR). Couverture quotidienne, report/déport non modélisé :
-    r_couvert = r_EUR + h * fx_ret / (1 + fx_ret)  (h = 1 : rendement en USD converti au cours du jour).
-    """
+    """Rendements EUR après couverture de change du ratio `hedge` (0 à 1) sur les colonnes USD."""
     r = ret_eur.copy()
     cols = [c for c in usd_cols if c in r.columns]
     if hedge > 0 and cols and fx_ret is not None:
@@ -264,30 +299,19 @@ def exposure_table(w, cash, meta_fn, hedge=0.0):
 # Cache de cours DuckDB
 # =====================
 class PriceStore:
-    """
-    Cache local des séries de cours dans DuckDB (fichier ou mémoire).
-
-    sync() ne télécharge que ce qui est nécessaire :
-      - cache frais (< ttl) et historique couvrant la date de début : aucun téléchargement
-      - cache périmé : téléchargement incrémental (derniers jours seulement)
-      - cours ajustés modifiés (dividende) ou historique insuffisant : rechargement complet
-      - Yahoo indisponible : le cache existant est servi (statut "stale")
-      - échec récent : mémorisé FAIL_TTL_MIN minutes (évite de relancer des téléchargements voués
-        à l'échec à chaque interaction Streamlit ; contourné par force=True)
-    read() lit plusieurs séries en une seule requête SQL.
-    """
+    """Cache local des séries de cours dans DuckDB (fichier ou mémoire)."""
 
     OVERLAP_DAYS = 10
-    ADJ_TOLERANCE = 5e-4   # écart relatif toléré sur la zone de recouvrement
-    FAIL_TTL_MIN = 30      # durée de mémorisation d'un échec de téléchargement
+    ADJ_TOLERANCE = 5e-4
+    FAIL_TTL_MIN = 30
 
     def __init__(self, path=":memory:"):
         self._lock = threading.RLock()
-        self._failures = {}                    # clé -> (horodatage, résultat), en mémoire uniquement
+        self._failures = {}
         try:
             self.con = duckdb.connect(path)
             self.path = path
-        except Exception:                      # fichier verrouillé / système en lecture seule
+        except Exception:
             self.con = duckdb.connect(":memory:")
             self.path = ":memory:"
         with self._lock:
@@ -298,7 +322,6 @@ class PriceStore:
                 "CREATE TABLE IF NOT EXISTS meta ("
                 "symbol VARCHAR PRIMARY KEY, source VARCHAR, start_covered DATE, last_fetch TIMESTAMP)")
 
-    # ---- accès bas niveau
     def _meta(self, key):
         with self._lock:
             row = self.con.execute(
@@ -336,9 +359,7 @@ class PriceStore:
         with self._lock:
             self.con.execute("UPDATE meta SET last_fetch = ? WHERE symbol = ?", [now, key])
 
-    # ---- API
     def read(self, keys, start_iso):
-        """Séries {clé: Series} depuis start_iso, en une requête SQL."""
         keys = list(keys)
         if not keys:
             return {}
@@ -359,10 +380,6 @@ class PriceStore:
         return n_sym, n_rows
 
     def sync(self, key, start_iso, fetch, candidates, ttl_hours=6.0, force=False):
-        """
-        Met à jour `key` si nécessaire. fetch(symbole, start_iso) -> Series ou None.
-        Retourne dict(status = hit | incremental | full | stale | failed, source).
-        """
         start = pd.Timestamp(start_iso)
         meta = self._meta(key)
         now = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -377,7 +394,6 @@ class PriceStore:
 
         cands = list(dict.fromkeys(([meta["source"]] if meta and meta["source"] else []) + list(candidates)))
 
-        # --- mise à jour incrémentale
         if covered:
             inc_start = (meta["last_date"] - pd.Timedelta(days=self.OVERLAP_DAYS)).strftime("%Y-%m-%d")
             for sym in cands:
@@ -387,22 +403,19 @@ class PriceStore:
                 old = self.read([key], inc_start).get(key)
                 common = s.index.intersection(old.index) if old is not None else []
                 if len(common) == 0:
-                    break                                          # recouvrement impossible : rechargement complet
+                    break
                 gap = ((s.loc[common] / old.loc[common]) - 1).abs().max()
                 if gap > self.ADJ_TOLERANCE:
-                    break                                          # historique ré-ajusté : rechargement complet
+                    break
                 self._store(key, s, sym, meta["start_covered"], replace_all=False)
                 return dict(status="incremental", source=sym)
 
-        # --- rechargement complet
         for sym in cands:
             s = fetch(sym, start_iso)
             if s is not None and len(s) > 0:
                 self._store(key, s, sym, start, replace_all=True)
                 return dict(status="full", source=sym)
 
-        # --- Yahoo indisponible : on sert le cache existant (même s'il commence plus tard
-        #     que demandé : le contrôle qualité le signalera comme historique partiel)
         result = (dict(status="stale", source=meta["source"]) if meta is not None
                   else dict(status="failed", source=None))
         self._failures[key] = (now, result)
@@ -414,51 +427,43 @@ def get_store(path):
     return PriceStore(path)
 
 
-# =====================
-# Sidebar
-# =====================
+# =====================================================================
+# HEADER (titre à gauche, export factsheet à droite : rempli en fin de script)
+# =====================================================================
+h_left, h_right = st.columns([5, 2], vertical_alignment="center")
+h_left.markdown(
+    '<div class="app-title"><h1>Portfolio vs Benchmark</h1>'
+    '<p>Allocation multi-actifs · Overlay tactique · Couverture USD/EUR · Factsheet PDF</p></div>',
+    unsafe_allow_html=True)
+export_slot = h_right.container()
+
+# =====================================================================
+# SIDEBAR ALLÉGÉE : paramètres globaux de simulation uniquement
+# =====================================================================
+st.sidebar.header("⚙️ Simulation")
 start = st.sidebar.date_input("Start date", datetime(2020, 1, 1))
 start_iso = pd.Timestamp(start).strftime("%Y-%m-%d")
-
-st.sidebar.header("⚙️ Simulation")
 rebal_label = st.sidebar.selectbox("Fréquence de rebalancement", list(REBAL_OPTIONS), index=1)
 rebal_code = REBAL_OPTIONS[rebal_label]
 cost_bps = st.sidebar.number_input(
     "Frais de transaction (bps par mouvement)", min_value=0.0, max_value=200.0, value=10.0, step=1.0,
     help="Appliqués au montant acheté ou vendu sur chaque ligne lors d'un rebalancement. "
          "Le premier investissement n'est pas facturé.")
-force_refresh = st.sidebar.button("🔄 Forcer le rafraîchissement des cours")
-
+force_refresh = st.sidebar.button("🔄 Forcer le rafraîchissement des cours", use_container_width=True)
 
 for _k, _v in OV_DEFAULTS.items():
     st.session_state.setdefault(_k, _v)
+st.session_state.setdefault("ov_fund_label", list(FUNDING_OPTIONS)[0])
 
 
 def _reset_overlay():
     for k, v in OV_DEFAULTS.items():
         st.session_state[k] = v
+    st.session_state["ov_fund_label"] = list(FUNDING_OPTIONS)[0]
 
-
-with st.sidebar.expander("🎯 Overlay tactique (TAA)", expanded=False):
-    st.caption("Écarts par rapport au portefeuille de base, en points d'actif net. "
-               "Tout est recalculé instantanément, factsheet comprise.")
-    ov_eu = st.slider("Actions Europe (pts)", -20.0, 20.0, step=0.5, key="ov_eu",
-                      help="Sur / sous-pondération des actions directes européennes de la poche.")
-    ov_us = st.slider("Actions US (pts)", -20.0, 20.0, step=0.5, key="ov_us",
-                      help="Sur / sous-pondération des actions directes d'Amérique du Nord.")
-    ov_bond = st.slider("Obligations d'État (pts)", 0.0, 30.0, step=0.5, key="ov_bond",
-                        help="Achat de proxys liquides : ETF Euro Govt (EUNH) et US Treasury 20+ ans (TLT).")
-    ov_re = st.slider("Immobilier (pts)", -10.0, 20.0, step=0.5, key="ov_re",
-                      help="Négatif : réduit le fonds immobilier existant. Positif : ETF IPRP / VNQ.")
-    ov_split = st.slider("Part US des proxys (%)", 0, 100, step=5, key="ov_split",
-                         help="Répartition Europe / US des achats obligataires et immobiliers.")
-    ov_hedge = st.slider("Ratio de couverture USD/EUR (%)", 0, 100, step=5, key="ov_hedge",
-                         help="Appliqué à toutes les lignes en USD (actions US, TLT, VNQ).")
-    ov_fund_label = st.radio("Financement des écarts", list(FUNDING_OPTIONS), key="ov_fund_label")
-    ov_fund = FUNDING_OPTIONS[ov_fund_label]
-    st.button("↺ Revenir au portefeuille de base", on_click=_reset_overlay)
 
 store = get_store(PRICE_DB_PATH)
+
 
 # =====================
 # Chargement des prix (DuckDB + téléchargement uniquement si nécessaire)
@@ -473,12 +478,12 @@ def _extract_close(df):
     for col in ("Adj Close", "Close"):
         if col in df.columns:
             s = df[col]
-            if isinstance(s, pd.DataFrame):      # colonnes dupliquées
+            if isinstance(s, pd.DataFrame):
                 s = s.iloc[:, 0]
             s = pd.to_numeric(s, errors="coerce").dropna()
             s = s[s > 0]
             if len(s):
-                return normalize_index(s)        # supprime le fuseau horaire
+                return normalize_index(s)
     return None
 
 
@@ -563,7 +568,7 @@ def load_benchmark_prices():
         return pd.DataFrame(), {}, failed
     px = pd.concat(series, axis=1).sort_index()
     w = pd.Series({k: BENCHMARK_WEIGHTS[k] for k in px.columns})
-    w = w * (sum(BENCHMARK_WEIGHTS.values()) / w.sum())   # poids total (cash inclus) conservé
+    w = w * (sum(BENCHMARK_WEIGHTS.values()) / w.sum())
     return px, w.to_dict(), failed
 
 
@@ -616,7 +621,7 @@ def line_meta(t: str) -> dict:
                 ccy=a["currency"] or _ccy(t), kind=_KIND.get(ac, "Direct"))
 
 
-fx.line_meta = line_meta     # la factsheet (build_context) lit ses métadonnées via ce wrapper
+fx.line_meta = line_meta
 
 
 def check_symbol(sym: str) -> tuple[bool, str]:
@@ -656,20 +661,70 @@ def _save_profile():
     st.session_state["_flash"] = ("success", f"Profil « {n} » sauvegardé.")
 
 
-with st.sidebar.expander("🧱 Portfolio Builder"):
-    st.selectbox("Charger un profil", ["—"] + asset_store.list_portfolios(), key="prof_sel",
-                 on_change=_load_profile)
-    st.text_input("Nom du profil", key="prof_name")
-    st.button("Sauvegarder le profil courant", on_click=_save_profile)
-    add_asset_ui(asset_store, check_symbol)
-    render_alloc_editor(_meta_name)
+# =====================================================================
+# SQUELETTE : zone d'alertes + onglets
+# =====================================================================
+alerts = st.container()
+tab_perf, tab_build, tab_taa, tab_data = st.tabs(
+    ["📊 Performance & Risque", "🧱 Portfolio Builder (Allocation)",
+     "🎯 Overlay Tactique (TAA) & Change", "🔍 Qualité des données & Coûts"])
 
+# ---- Onglet 2 : Portfolio Builder
+with tab_build:
+    col_b_l, col_b_r = st.columns([1, 1.25], gap="large")
+    with col_b_l:
+        with st.container(border=True):
+            st.markdown("##### Ajouter un actif")
+            add_asset_ui(asset_store, check_symbol)
+        with st.container(border=True):
+            st.markdown("##### Profils sauvegardés")
+            st.selectbox("Charger un profil", ["—"] + asset_store.list_portfolios(), key="prof_sel",
+                         on_change=_load_profile)
+            st.text_input("Nom du profil", key="prof_name")
+            st.button("Sauvegarder le profil courant", on_click=_save_profile, use_container_width=True)
+    with col_b_r:
+        with st.container(border=True):
+            st.markdown("##### Allocation cible")
+            render_alloc_editor(_meta_name)
+
+sync_alloc()
+
+# ---- Onglet 3 : contrôles de l'overlay
+with tab_taa:
+    col_t_l, col_t_r = st.columns([1, 2], gap="large")
+with col_t_l:
+    with st.container(border=True):
+        st.markdown("##### Écarts tactiques (pts d'actif net)")
+        ov_eu = st.slider("Actions Europe (pts)", -20.0, 20.0, step=0.5, key="ov_eu",
+                          help="Sur / sous-pondération des actions directes européennes de la poche.")
+        ov_us = st.slider("Actions US (pts)", -20.0, 20.0, step=0.5, key="ov_us",
+                          help="Sur / sous-pondération des actions directes d'Amérique du Nord.")
+        ov_bond = st.slider("Obligations d'État (pts)", 0.0, 30.0, step=0.5, key="ov_bond",
+                            help="Achat de proxys liquides : ETF Euro Govt (EUNH) et US Treasury 20+ ans (TLT).")
+        ov_re = st.slider("Immobilier (pts)", -10.0, 20.0, step=0.5, key="ov_re",
+                          help="Négatif : réduit le fonds immobilier existant. Positif : ETF IPRP / VNQ.")
+    with st.container(border=True):
+        st.markdown("##### Proxys & financement")
+        ov_split = st.slider("Part US des proxys (%)", 0, 100, step=5, key="ov_split",
+                             help="Répartition Europe / US des achats obligataires et immobiliers.")
+        ov_fund_label = st.radio("Financement des écarts", list(FUNDING_OPTIONS), key="ov_fund_label")
+        ov_fund = FUNDING_OPTIONS[ov_fund_label]
+    with st.container(border=True):
+        st.markdown("##### Change USD/EUR")
+        ov_hedge = st.slider("Ratio de couverture USD/EUR (%)", 0, 100, step=5, key="ov_hedge",
+                             help="Appliqué à toutes les lignes en USD (actions US, TLT, VNQ).")
+    st.button("↺ Revenir au portefeuille de base", on_click=_reset_overlay, use_container_width=True)
+
+
+# =====================
+# Chargement & Calculs financiers
+# =====================
 allocation = {s: w / 100 for s, w in st.session_state["alloc"].items() if w > 0}
 if not allocation:
-    st.warning("Allocation vide : ajoutez des actifs dans le Portfolio Builder (barre latérale).")
+    alerts.warning("Allocation vide : ajoutez des actifs dans l'onglet Portfolio Builder.")
     st.stop()
 if sum(allocation.values()) > 1 + 1e-9:
-    st.warning("⚠️ Somme des poids > 100 % : poids normalisés à 100 % (pas de levier).")
+    alerts.warning("⚠️ Somme des poids > 100 % : poids normalisés à 100 % (pas de levier).")
     _tot = sum(allocation.values())
     allocation = {s: w / _tot for s, w in allocation.items()}
 tickers = list(allocation)
@@ -681,25 +736,21 @@ with st.spinner("Chargement des cours (cache DuckDB, téléchargement si nécess
     bench_px, bench_weights_eff, bench_failed = load_benchmark_prices()
 
 n_sym, n_rows = store.stats()
-st.sidebar.caption(f"🗄️ Cache DuckDB : {n_sym} séries, {n_rows:,} cours ({store.path})".replace(",", " "))
 
 if prices.empty:
-    st.error("Aucune donnée de prix n'a pu être téléchargée. Vérifiez votre connexion ou les tickers.")
+    alerts.error("Aucune donnée de prix n'a pu être téléchargée. Vérifiez votre connexion ou les tickers.")
     st.stop()
 if bench_px.empty:
-    st.error("Aucune donnée de benchmark n'a pu être téléchargée.")
+    alerts.error("Aucune donnée de benchmark n'a pu être téléchargée.")
     st.stop()
 
-# ---- sans taux EUR/USD, les lignes USD sont exclues proprement
 if fx_series is None:
-    st.warning("⚠️ Taux EUR/USD indisponible : les lignes cotées en USD sont exclues du portefeuille.")
+    alerts.warning("⚠️ Taux EUR/USD indisponible : les lignes cotées en USD sont exclues du portefeuille.")
     for t in USD_TICKERS:
         if t in prices.columns:
             prices = prices.drop(columns=t)
             report[t].update(status="failed", note="Taux EUR/USD indisponible")
 
-# ---- calendrier unique : union des séances de tous les marchés, ffill PAR ACTIF.
-# Les jours fériés US / UE ne suppriment aucune date (pas de dropna / intersection destructrice).
 calendar = prices.index.union(bench_px.index)
 if fx_series is not None:
     calendar = calendar.union(fx_series.index)
@@ -712,10 +763,9 @@ prices, bench_px = prices.loc[first_day:], bench_px.loc[first_day:]
 if fx_series is not None:
     fx_aligned = fx_aligned.loc[first_day:]
 if len(prices) < MIN_OBS:
-    st.error(f"Historique commun insuffisant ({len(prices)} dates). Reculez la date de début.")
+    alerts.error(f"Historique commun insuffisant ({len(prices)} dates). Reculez la date de début.")
     st.stop()
 
-# ---- contrôles qualité sur les lignes retenues
 last_global = prices.index[-1]
 for t in prices.columns:
     r = report[t]
@@ -728,35 +778,32 @@ for t in prices.columns:
         r.update(status="partial",
                  note=f"Historique depuis le {r['first']:%d/%m/%Y} (rendement 0 % avant)")
 
-# ---- poids cibles effectifs : lignes exclues réparties au prorata, poids cash conservé
 excluded = [t for t in tickers if t not in prices.columns]
 kept = [t for t in tickers if t in prices.columns]
 total_target = sum(allocation.values())
 w_kept = pd.Series({t: allocation[t] for t in kept})
-weights = w_kept * (total_target / w_kept.sum())          # poids cibles de rebalancement
+weights = w_kept * (total_target / w_kept.sum())
 allocation_eff = weights.to_dict()
 excluded_names = [ticker_names.get(t, t) for t in excluded]
 
 if excluded:
     lost = sum(allocation[t] for t in excluded) * 100
-    st.warning(
+    alerts.warning(
         f"⚠️ {len(excluded)} ligne(s) exclue(s) faute de données exploitables : "
         f"{', '.join(excluded_names)} ({lost:.1f}% du poids cible). "
         "Leur poids est réparti au prorata sur les autres lignes ; "
         "la mention figure dans la factsheet."
     )
 if bench_failed:
-    st.warning("⚠️ Composantes du benchmark indisponibles et exclues : "
-               f"{', '.join(bench_failed)}. Les autres poids sont réajustés au prorata.")
+    alerts.warning("⚠️ Composantes du benchmark indisponibles et exclues : "
+                   f"{', '.join(bench_failed)}. Les autres poids sont réajustés au prorata.")
 issues = [t for t in kept if report[t]["status"] in ("stale", "partial")]
 if issues:
-    st.info("ℹ️ Lignes à surveiller : " + " ; ".join(
+    alerts.info("ℹ️ Lignes à surveiller : " + " ; ".join(
         f"{ticker_names.get(t, t)} ({report[t]['note']})" for t in issues))
-if not excluded and not issues and not bench_failed:
-    st.success("Tous les actifs ont été chargés avec succès !")
 
 # =====================
-# Overlay tactique + NAV portefeuille (rebalancement, dérive, frais)
+# Overlay tactique + NAV portefeuille
 # =====================
 usd_ok = [t for t in USD_TICKERS if t in prices.columns]
 prices_eur = prices.copy()
@@ -766,7 +813,6 @@ prices_eur = prices_eur.ffill()
 
 tilts_req = dict(eq_eu=ov_eu / 100, eq_us=ov_us / 100, bond=ov_bond / 100, re=ov_re / 100)
 
-# proxys chargés uniquement si la poche correspondante est surpondérée (cache DuckDB)
 proxy_px, proxy_notes = {}, []
 for t, m in OVERLAY_PROXIES.items():
     if tilts_req[m["sleeve"]] <= 0:
@@ -782,7 +828,7 @@ for t, m in OVERLAY_PROXIES.items():
 
 proxies_eur = pd.DataFrame(index=prices.index)
 for t, s_t in proxy_px.items():
-    if t in prices_eur.columns:          # proxy déjà détenu en portefeuille : colonne existante réutilisée
+    if t in prices_eur.columns:
         continue
     px_t = s_t.reindex(prices.index.union(s_t.index)).ffill().reindex(prices.index)
     proxies_eur[t] = px_t / fx_aligned if OVERLAY_PROXIES[t]["ccy"] == "USD" else px_t
@@ -816,39 +862,33 @@ sim_s = simulate_portfolio(ret_strat[w_strat.index], w_strat, rebal_code, cost_b
 sim_s_gross = simulate_portfolio(ret_strat[w_strat.index], w_strat, rebal_code, 0.0)
 sim_b = simulate_portfolio(ret_eur[weights.index], weights, rebal_code, cost_bps)
 
-portfolio_index = normalize_index(sim_s["nav"])              # stratégie tactique (overlay + couverture)
-portfolio_index_base = normalize_index(sim_b["nav"])         # portefeuille de base, non couvert
-weights_now = sim_s["weights_end"]                           # poids dérivés à la dernière date
+portfolio_index = normalize_index(sim_s["nav"])
+portfolio_index_base = normalize_index(sim_b["nav"])
+weights_now = sim_s["weights_end"]
 cost_drag = (sim_s["nav"].iloc[-1] / sim_s_gross["nav"].iloc[-1] - 1) * 100
 
-with st.expander("🔍 Qualité des données et poids du portefeuille"):
-    icons = {"ok": "✅ Disponible", "partial": "⚠️ Historique partiel",
-             "stale": "⚠️ Données anciennes", "failed": "❌ Exclu"}
-    cache_lbl = {"hit": "cache", "incremental": "mise à jour", "full": "téléchargé",
-                 "stale": "cache (hors ligne)", "failed": "-"}
-    df_weights = pd.DataFrame({
-        "Actif": [ticker_names.get(t, t) for t in tickers],
-        "Ticker": tickers,
-        "Source": [report[t]["source"] for t in tickers],
-        "Cache": [cache_lbl[report[t]["cache"]] for t in tickers],
-        "Statut": [icons[report[t]["status"]] for t in tickers],
-        "Poids cible": [f"{allocation[t] * 100:.1f}%" for t in tickers],
-        "Poids rebalancé": [f"{weights[t] * 100:.1f}%" if t in weights.index else "0.0%" for t in tickers],
-        "Poids tactique": [f"{w_strat[t] * 100:.1f}%" if t in w_strat.index else "0.0%" for t in tickers],
-        "Poids actuel (dérive)": [f"{weights_now[t] * 100:.1f}%" if t in weights_now.index else "0.0%"
-                                  for t in tickers],
-        "Détail": [report[t]["note"] for t in tickers],
-    })
-    st.dataframe(df_weights, use_container_width=True, hide_index=True)
-    st.caption(f"Total investi : {weights.sum() * 100:.1f}% "
-               f"(cible {total_target * 100:.1f}%, le solde est conservé en liquidités).")
+icons = {"ok": "✅ Disponible", "partial": "⚠️ Historique partiel",
+         "stale": "⚠️ Données anciennes", "failed": "❌ Exclu"}
+cache_lbl = {"hit": "cache", "incremental": "mise à jour", "full": "téléchargé",
+             "stale": "cache (hors ligne)", "failed": "-"}
+df_weights = pd.DataFrame({
+    "Actif": [ticker_names.get(t, t) for t in tickers],
+    "Ticker": tickers,
+    "Source": [report[t]["source"] for t in tickers],
+    "Cache": [cache_lbl[report[t]["cache"]] for t in tickers],
+    "Statut": [icons[report[t]["status"]] for t in tickers],
+    "Poids cible": [f"{allocation[t] * 100:.1f}%" for t in tickers],
+    "Poids rebalancé": [f"{weights[t] * 100:.1f}%" if t in weights.index else "0.0%" for t in tickers],
+    "Poids tactique": [f"{w_strat[t] * 100:.1f}%" if t in w_strat.index else "0.0%" for t in tickers],
+    "Poids actuel (dérive)": [f"{weights_now[t] * 100:.1f}%" if t in weights_now.index else "0.0%"
+                              for t in tickers],
+    "Détail": [report[t]["note"] for t in tickers],
+})
 
-# =====================
-# Benchmark (composite rebalancé quotidiennement, sans frais : indice théorique)
-# =====================
 bench_ret_df = pct(bench_px).fillna(0)
 bench_index = normalize_index(
     simulate_portfolio(bench_ret_df, pd.Series(bench_weights_eff), "D", 0.0)["nav"])
+
 
 # =====================
 # FONCTIONS DE CALCUL
@@ -863,12 +903,15 @@ def calculate_performance(index_series, days):
     end_value = index_series.iloc[-1]
     return (end_value / start_value - 1) * 100
 
+
 def calculate_volatility(returns_series, periods=252):
-    return returns_series.std() * np.sqrt(periods) * 100      # en %
+    return returns_series.std() * np.sqrt(periods) * 100
+
 
 def calculate_sharpe_ratio(returns_series, risk_free_rate=RF, periods=252):
     excess_returns = returns_series - (risk_free_rate / periods)
     return (excess_returns.mean() * periods) / (returns_series.std() * np.sqrt(periods))
+
 
 def calculate_sortino_ratio(returns_series, risk_free_rate=RF, periods=252):
     excess_returns = returns_series - (risk_free_rate / periods)
@@ -878,10 +921,12 @@ def calculate_sortino_ratio(returns_series, risk_free_rate=RF, periods=252):
         return 0
     return (excess_returns.mean() * periods) / downside_std
 
+
 def calculate_max_drawdown(index_series):
     cummax = index_series.cummax()
     drawdown = (index_series - cummax) / cummax
     return drawdown.min() * 100
+
 
 def calculate_calmar_ratio(index_series, returns_series, periods=252):
     annual_return = (index_series.iloc[-1] / index_series.iloc[0] - 1) * (periods / len(index_series))
@@ -890,17 +935,17 @@ def calculate_calmar_ratio(index_series, returns_series, periods=252):
         return 0
     return annual_return / max_dd
 
+
 def calculate_beta(portfolio_returns, benchmark_returns):
     covariance = np.cov(portfolio_returns, benchmark_returns)[0][1]
     variance = np.var(benchmark_returns)
     return covariance / variance if variance != 0 else 0
 
+
 def calculate_alpha(portfolio_return, benchmark_return, beta, risk_free_rate=RF):
     return portfolio_return - (risk_free_rate + beta * (benchmark_return - risk_free_rate))
 
-# =====================
-# CALCUL DES METRIQUES
-# =====================
+
 port_ret = pct(portfolio_index).dropna()
 port_ret_base = pct(portfolio_index_base).dropna()
 bench_ret = pct(bench_index).dropna()
@@ -942,155 +987,143 @@ def metrics_row(idx, ret):
     }
 
 
-# =====================
-# Affichage des graphiques
-# =====================
-fig = go.Figure()
-fig.add_trace(go.Scatter(x=portfolio_index.index, y=portfolio_index,
-                         name="Portefeuille tactique" if overlay_active or ov_hedge else "Portefeuille",
-                         line=dict(width=3, color='#1f3a93')))
-fig.add_trace(go.Scatter(x=bench_index.index, y=bench_index, name="Benchmark composite", line=dict(width=3, color='#d32f2f')))
-fig.add_trace(go.Scatter(x=portfolio_index_base.index, y=portfolio_index_base,
-                         name="Portefeuille de base (sans overlay, non couvert)",
-                         line=dict(width=2, dash="dot", color="#2ecc71")))
-fig.update_layout(height=600, template="plotly_white", hovermode='x unified',
-                  title=f"Performance cumulée (rebalancement : {rebal_label.lower()}, "
-                        f"frais : {cost_bps:g} bps, couverture USD : {ov_hedge}%)")
-st.plotly_chart(fig, use_container_width=True)
+# =====================================================================
+# ONGLET 1 : PERFORMANCE & RISQUE
+# =====================================================================
+with tab_perf:
+    d_perf = perf_1y_port - perf_1y_bench
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("Performance 1 an", f"{perf_1y_port:.2f}%", delta=f"{d_perf:+.2f} pts vs benchmark")
+    k2.metric("Volatilité annualisée", f"{vol_port:.2f}%", delta=f"{vol_port - vol_bench:+.2f} pts vs benchmark",
+              delta_color="inverse")
+    k3.metric("Ratio de Sharpe", f"{sharpe_port:.2f}", delta=f"{sharpe_port - sharpe_bench:+.2f} vs benchmark")
+    k4.metric("Max Drawdown", f"{mdd_port:.2f}%", delta=f"{mdd_port - mdd_bench:+.2f} pts vs benchmark")
 
-# Top 5
-st.subheader("🏆 Les 5 lignes les plus performantes sur le dernier mois")
-month_start = prices_eur.index[-1] - timedelta(days=30)
-prices_month = prices_eur[prices_eur.index >= month_start].ffill()
-if len(prices_month) >= 2:
-    monthly_perf = ((prices_month.iloc[-1] / prices_month.iloc[0] - 1) * 100).dropna()
-    monthly_perf = monthly_perf.sort_values(ascending=False)
-    top5 = monthly_perf.head(5)
-    col_bar, col_line = st.columns(2)
-    top5_labels = [ticker_names.get(t, t) for t in top5.index]
-    with col_bar:
-        bar_colors = ['#2ecc71' if v >= 0 else '#e74c3c' for v in top5.values]
-        fig_bar = go.Figure(go.Bar(
-            x=top5_labels,
-            y=top5.values,
-            marker_color=bar_colors,
-            text=[f"{v:.2f}%" for v in top5.values],
-            textposition='outside'
-        ))
-        fig_bar.update_layout(
-            title="Performance mensuelle (%)",
-            template="plotly_white",
-            yaxis_title="%",
-            height=400,
-            showlegend=False
-        )
-        st.plotly_chart(fig_bar, use_container_width=True)
-    with col_line:
-        fig_line = go.Figure()
-        for ticker in top5.index:
-            series = prices_month[ticker].dropna()
-            if len(series) >= 2:
-                normalized = (series / series.iloc[0]) * 100
-                fig_line.add_trace(go.Scatter(
-                    x=normalized.index,
-                    y=normalized,
-                    name=ticker_names.get(ticker, ticker),
-                    mode='lines',
-                    line=dict(width=2)
-                ))
-        fig_line.update_layout(
-            title="Évolution normalisée sur le mois (base 100)",
-            template="plotly_white",
-            yaxis_title="Base 100",
-            height=400
-        )
-        st.plotly_chart(fig_line, use_container_width=True)
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=portfolio_index.index, y=portfolio_index,
+                             name="Portefeuille tactique" if overlay_active or ov_hedge else "Portefeuille",
+                             line=dict(width=3, color=NAVY)))
+    fig.add_trace(go.Scatter(x=bench_index.index, y=bench_index, name="Benchmark composite",
+                             line=dict(width=3, color=MIST)))
+    fig.add_trace(go.Scatter(x=portfolio_index_base.index, y=portfolio_index_base,
+                             name="Portefeuille de base (sans overlay, non couvert)",
+                             line=dict(width=2, dash="dot", color=STEEL)))
+    style_fig(fig, 560, hovermode="x unified",
+              title=f"Performance cumulée (rebalancement : {rebal_label.lower()}, "
+                    f"frais : {cost_bps:g} bps, couverture USD : {ov_hedge}%)")
+    st.plotly_chart(fig, use_container_width=True)
 
-st.subheader("📈 Performances")
-col1, col2, col3 = st.columns(3)
-with col1:
-    st.markdown("**Portefeuille (stratégie)**")
-    st.metric("Perf YTD", f"{perf_ytd_port:.2f}%")
-    st.metric("Perf 1 an", f"{perf_1y_port:.2f}%")
-    st.metric("Perf 3 ans", f"{perf_3y_port:.2f}%")
-with col2:
-    st.markdown("**Risque (stratégie)**")
-    st.metric("Volatilité", f"{vol_port:.2f}%")
-    st.metric("Sharpe", f"{sharpe_port:.2f}")
-    st.metric("Max Drawdown", f"{mdd_port:.2f}%")
-with col3:
-    st.markdown("**Benchmark**")
-    st.metric("Perf YTD", f"{perf_ytd_bench:.2f}%")
-    st.metric("Perf 1 an", f"{perf_1y_bench:.2f}%")
-    st.metric("Perf 3 ans", f"{perf_3y_bench:.2f}%")
+    st.subheader("Comparatif des métriques")
+    df_cmp = pd.DataFrame({"Portefeuille tactique": metrics_row(portfolio_index, port_ret),
+                           "Portefeuille de base": metrics_row(portfolio_index_base, port_ret_base),
+                           "Benchmark": metrics_row(bench_index, bench_ret)})
+    st.dataframe(df_cmp.round(2), use_container_width=True)
 
-st.subheader("📊 Statistiques globales")
-col1, col2, col3 = st.columns(3)
-col1.metric("Perf depuis le début", f"{(portfolio_index.iloc[-1] - 1) * 100:.2f}%")
-col2.metric("Volatilité (annualisée)", f"{vol_port:.2f}%")
-col3.metric("Sharpe Ratio", f"{sharpe_port:.2f}")
-st.caption(f"Taux sans risque : {RF * 100:.1f}% (identique dans l'application et dans la factsheet).")
+    st.subheader("Top 5 des lignes sur le dernier mois")
+    month_start = prices_eur.index[-1] - timedelta(days=30)
+    prices_month = prices_eur[prices_eur.index >= month_start].ffill()
+    if len(prices_month) >= 2:
+        monthly_perf = ((prices_month.iloc[-1] / prices_month.iloc[0] - 1) * 100).dropna()
+        monthly_perf = monthly_perf.sort_values(ascending=False)
+        top5 = monthly_perf.head(5)
+        col_bar, col_line = st.columns(2)
+        top5_labels = [ticker_names.get(t, t) for t in top5.index]
+        with col_bar:
+            fig_bar = go.Figure(go.Bar(
+                x=top5_labels, y=top5.values,
+                marker_color=[STEEL if v >= 0 else NEG for v in top5.values],
+                text=[f"{v:.2f}%" for v in top5.values], textposition="outside"))
+            style_fig(fig_bar, 400, title="Performance mensuelle (%)", yaxis_title="%", showlegend=False)
+            st.plotly_chart(fig_bar, use_container_width=True)
+        with col_line:
+            fig_line = go.Figure()
+            for i, ticker in enumerate(top5.index):
+                series = prices_month[ticker].dropna()
+                if len(series) >= 2:
+                    normalized = (series / series.iloc[0]) * 100
+                    fig_line.add_trace(go.Scatter(x=normalized.index, y=normalized,
+                                                  name=ticker_names.get(ticker, ticker), mode="lines",
+                                                  line=dict(width=2, color=SEQ[i % len(SEQ)])))
+            style_fig(fig_line, 400, title="Évolution normalisée sur le mois (base 100)", yaxis_title="Base 100")
+            st.plotly_chart(fig_line, use_container_width=True)
+    st.caption(f"Taux sans risque : {RF * 100:.1f}% (identique dans l'application et dans la factsheet). "
+               "Mise à jour automatique toutes les heures.")
 
-st.subheader("🎯 Overlay tactique")
-labels = dict(eq_eu="Actions Europe", eq_us="Actions US", bond="Obligations d'État", re="Immobilier")
-if overlay_active:
-    st.caption("Écarts effectifs : " + " | ".join(
-        f"{labels[k]} {tact['eff'][k] * 100:+.1f} pt" for k in labels) +
-        f" | Couverture USD {ov_hedge}%")
-else:
-    st.caption(f"Aucun écart tactique actif (couverture USD : {ov_hedge}%).")
-if tact["scaled"]:
-    st.warning("⚠️ Financement insuffisant : les surpondérations ont été réduites (pas de levier). "
-               "Choisissez « Via les liquidités » ou diminuez les écarts.")
-clipped = [labels[k] for k in labels if abs(tact["eff"][k] - tilts_req[k]) > 1e-9 and not tact["scaled"]]
-if clipped:
-    st.info("ℹ️ Écart limité par la taille de la poche existante ou l'absence de proxy : "
-            + ", ".join(clipped))
-if proxy_notes:
-    st.warning("⚠️ Proxys indisponibles : " + " ; ".join(proxy_notes) +
-               ". Vérifiez OVERLAY_PROXIES dans factsheet_export.py.")
+# =====================================================================
+# ONGLET 3 (colonne droite) : expositions + alertes de financement
+# =====================================================================
+with col_t_r:
+    labels = dict(eq_eu="Actions Europe", eq_us="Actions US", bond="Obligations d'État", re="Immobilier")
+    if overlay_active:
+        st.success("Écarts effectifs : " + " | ".join(
+            f"{labels[k]} {tact['eff'][k] * 100:+.1f} pt" for k in labels) +
+            f" | Couverture USD {ov_hedge}%")
+    else:
+        st.info(f"Aucun écart tactique actif (couverture USD : {ov_hedge}%).")
+    if tact["scaled"]:
+        st.warning("⚠️ Financement insuffisant : les surpondérations ont été réduites (pas de levier). "
+                   "Choisissez « Via les liquidités » ou diminuez les écarts.")
+    clipped = [labels[k] for k in labels if abs(tact["eff"][k] - tilts_req[k]) > 1e-9 and not tact["scaled"]]
+    if clipped:
+        st.info("ℹ️ Écart limité par la taille de la poche existante ou l'absence de proxy : "
+                + ", ".join(clipped))
+    if proxy_notes:
+        st.warning("⚠️ Proxys indisponibles : " + " ; ".join(proxy_notes) +
+                   ". Vérifiez OVERLAY_PROXIES dans factsheet_export.py.")
 
-expo_b = exposure_table(weights, max(0.0, 1.0 - weights.sum()), line_meta, 0.0)
-expo_s = exposure_table(w_strat, tact["cash"], line_meta, ov_hedge / 100)
-df_exp = pd.DataFrame({"Base": expo_b, "Tactique": expo_s})
-df_exp["Écart (pts)"] = df_exp["Tactique"] - df_exp["Base"]
-col_t, col_g = st.columns([1, 1])
-with col_t:
-    st.dataframe(df_exp.round(1), use_container_width=True)
-with col_g:
+    expo_b = exposure_table(weights, max(0.0, 1.0 - weights.sum()), line_meta, 0.0)
+    expo_s = exposure_table(w_strat, tact["cash"], line_meta, ov_hedge / 100)
+    df_exp = pd.DataFrame({"Base": expo_b, "Tactique": expo_s})
+    df_exp["Écart (pts)"] = df_exp["Tactique"] - df_exp["Base"]
+
     fig_exp = go.Figure()
-    fig_exp.add_trace(go.Bar(x=df_exp.index, y=df_exp["Base"], name="Base", marker_color="#9aa5b1"))
-    fig_exp.add_trace(go.Bar(x=df_exp.index, y=df_exp["Tactique"], name="Tactique", marker_color="#1f3a93"))
-    fig_exp.update_layout(barmode="group", template="plotly_white", height=360, yaxis_title="% actif net",
-                          margin=dict(t=30, b=10), legend=dict(orientation="h"))
+    fig_exp.add_trace(go.Bar(x=df_exp.index, y=df_exp["Base"], name="Base", marker_color=MIST))
+    fig_exp.add_trace(go.Bar(x=df_exp.index, y=df_exp["Tactique"], name="Tactique", marker_color=NAVY))
+    style_fig(fig_exp, 380, barmode="group", yaxis_title="% actif net", title="Expositions : base vs tactique")
     st.plotly_chart(fig_exp, use_container_width=True)
+    st.dataframe(df_exp.round(1), use_container_width=True)
 
-df_cmp = pd.DataFrame({"Portefeuille tactique": metrics_row(portfolio_index, port_ret),
-                       "Portefeuille de base": metrics_row(portfolio_index_base, port_ret_base),
-                       "Benchmark": metrics_row(bench_index, bench_ret)})
-st.dataframe(df_cmp.round(2), use_container_width=True)
+# =====================================================================
+# ONGLET 4 : QUALITÉ DES DONNÉES & COÛTS
+# =====================================================================
+with tab_data:
+    st.subheader("Suivi des tickers et du cache DuckDB")
+    st.dataframe(df_weights, use_container_width=True, hide_index=True)
+    st.caption(f"Total investi : {weights.sum() * 100:.1f}% "
+               f"(cible {total_target * 100:.1f}%, le solde est conservé en liquidités). "
+               f"🗄️ Cache DuckDB : {n_sym} séries, {n_rows:,} cours ({store.path})".replace(",", " "))
 
-st.subheader("⚙️ Rebalancement et frais (stratégie)")
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("Fréquence", rebal_label)
-c2.metric("Rebalancements", f"{sim_s['n_rebal']}")
-c3.metric("Rotation annualisée", f"{sim_s['turnover_ann'] * 100:.1f}%",
-          help="Montants achetés + vendus rapportés à la valeur du portefeuille, annualisés.")
-c4.metric("Impact cumulé des frais", f"{cost_drag:.2f}%",
-          help="Valeur nette de frais par rapport à la même stratégie sans frais.")
+    st.subheader("Dérive des poids")
+    drift = ((weights_now.reindex(w_strat.index).fillna(0.0) - w_strat) * 100).sort_values()
+    fig_drift = go.Figure(go.Bar(
+        x=drift.values, y=[ticker_names.get(t, t) for t in drift.index], orientation="h",
+        marker_color=[STEEL if v >= 0 else NEG for v in drift.values],
+        text=[f"{v:+.2f}" for v in drift.values], textposition="outside"))
+    style_fig(fig_drift, max(320, 24 * len(drift) + 120),
+              title="Poids actuel (dérive) − poids tactique cible, en points", showlegend=False)
+    st.plotly_chart(fig_drift, use_container_width=True)
 
-st.caption("Mise à jour automatique toutes les heures")
+    st.subheader("Rebalancement et frais (stratégie)")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Fréquence", rebal_label)
+    c2.metric("Rebalancements", f"{sim_s['n_rebal']}")
+    c3.metric("Rotation annualisée", f"{sim_s['turnover_ann'] * 100:.1f}%",
+              help="Montants achetés + vendus rapportés à la valeur du portefeuille, annualisés.")
+    c4.metric("Impact cumulé des frais", f"{cost_drag:.2f}%",
+              help="Valeur nette de frais par rapport à la même stratégie sans frais.")
 
-# =====================
-# FACTSHEET PDF (FR + EN, 1 clic, données temps réel)
-# =====================
-render_factsheet_section(
-    portfolio_index, bench_index, port_ret,
-    w_strat.to_dict(), TICKER_NAMES_ALL, weights_now, prices_eur_all,
-    bench_weights=bench_weights_eff,
-    excluded=excluded_names,
-    rebal=dict(freq=rebal_code, bps=cost_bps, n=sim_s["n_rebal"],
-               turnover=sim_s["turnover_ann"] * 100, drag=cost_drag),
-    overlay=dict(active=overlay_active, hedge=float(ov_hedge),
-                 tilts={k: round(v * 100, 2) for k, v in tact["eff"].items()}),
-)
+# =====================================================================
+# EXPORT FACTSHEET : injecté dans l'en-tête (popover en haut à droite)
+# =====================================================================
+with export_slot:
+    with st.popover("📄 Factsheet PDF (FR / EN)", use_container_width=True):
+        render_factsheet_section(
+            portfolio_index, bench_index, port_ret,
+            w_strat.to_dict(), TICKER_NAMES_ALL, weights_now, prices_eur_all,
+            bench_weights=bench_weights_eff,
+            excluded=excluded_names,
+            rebal=dict(freq=rebal_code, bps=cost_bps, n=sim_s["n_rebal"],
+                       turnover=sim_s["turnover_ann"] * 100, drag=cost_drag),
+            overlay=dict(active=overlay_active, hedge=float(ov_hedge),
+                         tilts={k: round(v * 100, 2) for k, v in tact["eff"].items()}),
+        )
