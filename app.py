@@ -20,7 +20,7 @@ from portfolio_builder import (add_asset_ui, init_alloc_state, render_alloc_edit
 st.set_page_config(page_title="Portfolio vs Benchmark", page_icon="📊", layout="wide")
 
 # =====================================================================
-# CHARTE GRAPHIQUE (palette de la factsheet PDF)
+# CHARTE GRAPHIQUE (Sobriété institutionnelle — palette factsheet PDF)
 # =====================================================================
 NAVY, STEEL, MIST = "#0D2B55", "#2E6DA4", "#8FA3B8"
 NEG = "#B23A48"
@@ -28,52 +28,80 @@ SEQ = [NAVY, STEEL, MIST, "#5B7FA6", "#1B4F8A"]
 
 st.markdown("""
 <style>
-:root{--navy:#0D2B55;--steel:#2E6DA4;--mist:#8FA3B8;--bg:#F8FAFC;--line:#D6DEE8;--muted:#5B6B7F;}
+:root{--navy:#0D2B55;--steel:#2E6DA4;--mist:#8FA3B8;--bg:#F8FAFC;--line:#E2E8F0;--muted:#64748B;}
 .stApp{background:var(--bg);}
-.block-container{padding-top:3.4rem;max-width:1500px;}
+
+/* Laisse l'espace nécessaire sous le bandeau Streamlit Cloud (Fork / GitHub) */
+header[data-testid="stHeader"]{background:transparent;}
+.block-container{padding-top:3.6rem;padding-bottom:3rem;max-width:1440px;}
 #MainMenu, footer{visibility:hidden;}
 
-/* Titres */
-h1,h2,h3,h4,h5{color:var(--navy);letter-spacing:-.01em;}
-h3{border-bottom:1px solid var(--line);padding-bottom:.35rem;margin-top:1.2rem;}
-h5{text-transform:uppercase;font-size:.78rem;letter-spacing:.06em;color:var(--steel);margin:.2rem 0 .6rem;}
+/* Typographie éditoriale sans artifice */
+h1,h2,h3,h4,h5{color:var(--navy);letter-spacing:-0.015em;}
+h3{border-bottom:1px solid var(--line);padding-bottom:0.4rem;margin-top:1.4rem;font-size:1.15rem;}
+h5{text-transform:uppercase;font-size:0.75rem;letter-spacing:0.06em;color:var(--muted);margin:0.1rem 0 0.75rem;font-weight:600;}
 
-/* En-tête */
-.app-title h1{font-size:1.9rem;font-weight:700;margin:0;padding:0;line-height:1.15;}
-.app-title p{margin:.25rem 0 0;color:var(--muted);font-size:.92rem;}
-.app-title{border-left:5px solid var(--navy);padding-left:.9rem;}
+/* En-tête sobre avec filet bas */
+.app-header{border-bottom:1px solid var(--line);padding-bottom:0.85rem;margin-bottom:0.5rem;}
+.app-header h1{font-size:1.75rem;font-weight:700;margin:0;padding:0;line-height:1.2;color:var(--navy);}
+.app-header p{margin:0.3rem 0 0;color:var(--muted);font-size:0.88rem;}
 
-/* Cartes métriques */
-[data-testid="stMetric"]{background:#fff;border:1px solid var(--line);border-left:4px solid var(--steel);
-  border-radius:8px;padding:.85rem 1rem;box-shadow:0 1px 3px rgba(13,43,85,.08);}
-[data-testid="stMetricLabel"] p{color:var(--muted);font-size:.74rem;text-transform:uppercase;
-  letter-spacing:.05em;font-weight:600;}
-[data-testid="stMetricValue"]{color:var(--navy);font-weight:700;}
+/* Cartes métriques épurées (encadrement fin 1px, sans barre latérale colorée) */
+[data-testid="stMetric"]{
+  background:#FFFFFF;
+  border:1px solid var(--line);
+  border-radius:6px;
+  padding:0.9rem 1.1rem;
+  box-shadow:0 1px 2px rgba(15, 23, 42, 0.03);
+}
+[data-testid="stMetricLabel"] p{
+  color:var(--muted);
+  font-size:0.72rem;
+  text-transform:uppercase;
+  letter-spacing:0.05em;
+  font-weight:600;
+}
+[data-testid="stMetricValue"]{
+  color:var(--navy);
+  font-weight:700;
+  font-variant-numeric:tabular-nums;
+}
 
 /* Onglets */
-.stTabs [data-baseweb="tab-list"]{gap:.2rem;border-bottom:1px solid var(--line);}
-.stTabs [data-baseweb="tab"]{height:2.9rem;padding:0 1.2rem;font-weight:600;color:var(--muted);}
+.stTabs [data-baseweb="tab-list"]{gap:0.4rem;border-bottom:1px solid var(--line);}
+.stTabs [data-baseweb="tab"]{height:2.75rem;padding:0 1rem;font-weight:600;font-size:0.9rem;color:var(--muted);}
 .stTabs [aria-selected="true"]{color:var(--navy);}
-.stTabs [data-baseweb="tab-highlight"]{background:var(--navy);height:3px;}
+.stTabs [data-baseweb="tab-highlight"]{background:var(--navy);height:2px;}
 .stTabs [data-baseweb="tab-border"]{background:transparent;}
 
 /* Sidebar */
-[data-testid="stSidebar"]{background:#fff;border-right:1px solid var(--line);}
-[data-testid="stSidebar"] h2,[data-testid="stSidebar"] h3{border:none;font-size:1rem;}
+[data-testid="stSidebar"]{background:#FFFFFF;border-right:1px solid var(--line);}
+[data-testid="stSidebar"] h2,[data-testid="stSidebar"] h3{border:none;font-size:0.95rem;}
 
 /* Boutons */
-.stButton>button,.stDownloadButton>button{border-radius:6px;border:1px solid var(--steel);
-  color:var(--steel);font-weight:600;background:#fff;}
-.stButton>button:hover,.stDownloadButton>button:hover{background:var(--navy);color:#fff;border-color:var(--navy);}
-.stButton>button[kind="primary"]{background:var(--navy);color:#fff;border-color:var(--navy);}
+.stButton>button,.stDownloadButton>button{
+  border-radius:6px;
+  border:1px solid #CBD5E1;
+  color:var(--navy);
+  font-weight:600;
+  font-size:0.85rem;
+  background:#FFFFFF;
+  transition:all 0.15s ease;
+}
+.stButton>button:hover,.stDownloadButton>button:hover{
+  background:var(--navy);
+  color:#FFFFFF;
+  border-color:var(--navy);
+}
+.stButton>button[kind="primary"]{background:var(--navy);color:#FFFFFF;border-color:var(--navy);}
 
-/* Cartes / conteneurs bordés, tableaux */
-[data-testid="stVerticalBlockBorderWrapper"]{background:#fff;border-radius:10px;}
-[data-testid="stDataFrame"]{border:1px solid var(--line);border-radius:8px;box-shadow:0 1px 3px rgba(13,43,85,.06);}
+/* Conteneurs et tableaux */
+[data-testid="stVerticalBlockBorderWrapper"]{background:#FFFFFF;border-color:var(--line);border-radius:8px;}
+[data-testid="stDataFrame"]{border:1px solid var(--line);border-radius:6px;}
 
-/* Jauge d'allocation (Portfolio Builder) */
-.alloc-gauge{display:flex;height:14px;border-radius:7px;overflow:hidden;background:#E3E9F0;margin:.1rem 0 .9rem;}
-.alloc-gauge div:last-child{background:#C9D4E0;}
+/* Jauge d'allocation */
+.alloc-gauge{display:flex;height:10px;border-radius:5px;overflow:hidden;background:#E2E8F0;margin:0.2rem 0 0.9rem;}
+.alloc-gauge div:last-child{background:#CBD5E1;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -83,12 +111,11 @@ def style_fig(fig, height=420, **kw):
     fig.update_layout(template="plotly_white", height=height, paper_bgcolor="rgba(0,0,0,0)",
                       plot_bgcolor="rgba(0,0,0,0)",
                       font=dict(family="Inter, Segoe UI, sans-serif", color=NAVY, size=12),
-                      margin=dict(l=10, r=10, t=55, b=10),
+                      margin=dict(l=10, r=10, t=50, b=10),
                       legend=dict(orientation="h", yanchor="top", y=-0.12, x=0), **kw)
-    fig.update_xaxes(gridcolor="#E6ECF2", zeroline=False)
-    fig.update_yaxes(gridcolor="#E6ECF2", zeroline=False)
+    fig.update_xaxes(gridcolor="#E2E8F0", zeroline=False)
+    fig.update_yaxes(gridcolor="#E2E8F0", zeroline=False)
     return fig
-
 
 # =====================
 # Paramètres
