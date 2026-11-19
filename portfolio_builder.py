@@ -74,7 +74,7 @@ def _normalize() -> None:
     if n:
         st.session_state["alloc"] = {s: round(v, 2) for s, v in n.items()}
         for s, v in st.session_state["alloc"].items():
-            st.session_state[f"w_{s}"] = v      # réaligne les sliders (callback : avant instanciation)
+            st.session_state[f"w_{s}"] = v
 
 
 def _delete(s: str) -> None:
@@ -93,31 +93,41 @@ def _clear(step: str) -> None:
         st.session_state["confirm_clear"] = False
 
 
+def _gauge(tot: float) -> None:
+    """Jauge Investi / Liquidités (CSS .alloc-gauge défini dans l'app) ; rouge si > 100 %."""
+    inv, cash = min(tot, 100.0), max(0.0, 100.0 - tot)
+    col = "#2E6DA4" if tot <= 100.0001 else "#B23A48"
+    st.markdown(f'<div class="alloc-gauge"><div style="width:{inv:.1f}%;background:{col}"></div>'
+                f'<div style="width:{cash:.1f}%"></div></div>', unsafe_allow_html=True)
+
+
 def render_alloc_editor(meta_fn) -> dict[str, float]:
     sync_alloc()
     alloc = st.session_state["alloc"]
     names = st.session_state.get("alloc_names", {})
     tot = sum(alloc.values())
     m1, m2 = st.columns(2)
-    m1.metric("Somme des poids", f"{tot:.1f} %", delta=f"{tot - 100:+.1f} % vs 100 %", delta_color="off")
+    m1.metric("Investi", f"{tot:.1f} %", delta=f"{tot - 100:+.1f} % vs 100 %", delta_color="off")
     m2.metric("Liquidités", f"{max(0.0, 100 - tot):.1f} %")
+    _gauge(tot)
 
     b1, b2 = st.columns(2)
-    b1.button("Normaliser à 100 %", on_click=_normalize, disabled=tot <= 0)
+    b1.button("Normaliser à 100 %", on_click=_normalize, disabled=tot <= 0, use_container_width=True)
     if st.session_state.get("confirm_clear"):
         c1, c2 = b2.columns(2)
-        c1.button("Confirmer", on_click=_clear, args=("ok",), type="primary")
-        c2.button("Annuler", on_click=_clear, args=("no",))
+        c1.button("Confirmer", on_click=_clear, args=("ok",), type="primary", use_container_width=True)
+        c2.button("Annuler", on_click=_clear, args=("no",), use_container_width=True)
     else:
-        b2.button("Vider", on_click=_clear, args=("ask",), disabled=not alloc)
+        b2.button("Vider", on_click=_clear, args=("ask",), disabled=not alloc, use_container_width=True)
 
-    for s, w in sorted(alloc.items(), key=lambda kv: -kv[1]):
-        k = f"w_{s}"
-        st.session_state.setdefault(k, float(w))
-        c = st.columns([4, 5, 1])
-        c[0].markdown(f"**{(meta_fn(s) or {}).get('name') or names.get(s) or s}**  \n`{s}`")
-        alloc[s] = float(c[1].slider("w", 0.0, 100.0, step=0.5, key=k, label_visibility="collapsed"))
-        c[2].button("🗑", key=f"del_{s}", on_click=_delete, args=(s,))
+    with st.container(height=470, border=False):
+        for s, w in sorted(alloc.items(), key=lambda kv: -kv[1]):
+            k = f"w_{s}"
+            st.session_state.setdefault(k, float(w))
+            c = st.columns([4, 5, 1], vertical_alignment="center")
+            c[0].markdown(f"**{(meta_fn(s) or {}).get('name') or names.get(s) or s}**  \n`{s}`")
+            alloc[s] = float(c[1].slider("w", 0.0, 100.0, step=0.5, key=k, label_visibility="collapsed"))
+            c[2].button("🗑", key=f"del_{s}", on_click=_delete, args=(s,))
     return dict(alloc)
 
 
@@ -170,30 +180,39 @@ def add_asset_ui(store, check_symbol) -> None:
     if lvl:
         getattr(st, lvl)(msg)
 
-    q = st.text_input("Rechercher un actif (nom, ticker, ISIN)", key="q").strip()
-    if len(q) < 2:
-        st.caption("Saisir au moins 2 caractères.")
-        st.session_state["search_results"] = []
-    else:
-        st.session_state["search_results"] = combine_search(store, q)
-    res = st.session_state["search_results"]
+    t_search, t_manual = st.tabs(["🔎 Recherche", "✍️ Ajout manuel"])
 
-    if res:
-        st.radio("Résultats", range(len(res)), index=None, key="sel",
-                 format_func=lambda i: f"{res[i]['name']} — {res[i]['symbol']} "
-                                       f"({res[i].get('asset_class') or 'n/d'})")
-    elif len(q) >= 2:
-        st.caption("Aucun résultat.")
+    with t_search:
+        q = st.text_input("Rechercher un actif (nom, ticker, ISIN)", key="q").strip()
+        if len(q) < 2:
+            st.caption("Saisir au moins 2 caractères.")
+            st.session_state["search_results"] = []
+        else:
+            st.session_state["search_results"] = combine_search(store, q)
+        res = st.session_state["search_results"]
 
-    st.button("Ajouter au portefeuille", disabled=st.session_state.get("sel") is None or not res,
-              on_click=_on_search_add, args=(store, check_symbol))
+        if res:
+            with st.container(height=260, border=False):
+                st.radio("Résultats", range(len(res)), index=None, key="sel",
+                         format_func=lambda i: f"{res[i]['name']} — {res[i]['symbol']} "
+                                               f"({res[i].get('asset_class') or 'n/d'})")
+        elif len(q) >= 2:
+            st.caption("Aucun résultat.")
 
-    with st.expander("Ajout manuel"):
+        st.button("Ajouter au portefeuille", type="primary", use_container_width=True,
+                  disabled=st.session_state.get("sel") is None or not res,
+                  on_click=_on_search_add, args=(store, check_symbol))
+
+    with t_manual:
         with st.form("manual_add", border=False):
-            st.text_input("Ticker", key="m_t")
-            st.text_input("Nom", key="m_n")
-            st.selectbox("Classe d'actifs", _AC_OPTS, key="m_c")
-            st.selectbox("Devise", _CCY_OPTS, key="m_d")
-            st.text_input("Secteur (optionnel)", key="m_s")
-            st.text_input("ISIN (optionnel)", key="m_i")
-            st.form_submit_button("Ajouter", on_click=_on_manual_add, args=(store, check_symbol))
+            f1, f2 = st.columns(2)
+            f1.text_input("Ticker", key="m_t")
+            f2.text_input("Nom", key="m_n")
+            f3, f4 = st.columns(2)
+            f3.selectbox("Classe d'actifs", _AC_OPTS, key="m_c")
+            f4.selectbox("Devise", _CCY_OPTS, key="m_d")
+            f5, f6 = st.columns(2)
+            f5.text_input("Secteur (optionnel)", key="m_s")
+            f6.text_input("ISIN (optionnel)", key="m_i")
+            st.form_submit_button("Ajouter", on_click=_on_manual_add, args=(store, check_symbol),
+                                  use_container_width=True)
