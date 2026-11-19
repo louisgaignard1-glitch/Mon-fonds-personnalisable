@@ -1116,6 +1116,12 @@ with col_t_r:
 # ONGLET 4 : QUALITÉ DES DONNÉES & COÛTS
 # =====================================================================
 with tab_data:
+    if issues_msg:
+        st.info(issues_msg)
+
+    st.subheader("Suivi des tickers et du cache DuckDB")
+    st.dataframe(df_weights, use_container_width=True, hide_index=True)
+with tab_data:
     st.subheader("Suivi des tickers et du cache DuckDB")
     st.dataframe(df_weights, use_container_width=True, hide_index=True)
     st.caption(f"Total investi : {weights.sum() * 100:.1f}% "
